@@ -1,4 +1,6 @@
 import requests
+import csv
+import os
 from bs4 import BeautifulSoup
 
 TAG_BLACKLIST = ["script", "style", "header", "footer", "nav", "aside", "noscript"]
@@ -31,4 +33,33 @@ def extractArticle(url):
 
     return text
 
-print(extractArticle("https://www.nytimes.com/athletic/live-blogs/transfer-news-live-updates-thursday-august-28/qNI2Vf8dydwk/"))
+def saveArticle(url, label, filename="dataset.csv"):
+    existing_urls = set()
+    if os.path.exists(filename):
+        with open(filename, "r", encoding="utf-8") as f:
+            reader = csv.reader(f)
+
+            for row in reader:
+                if len(row) < 3:
+                    continue
+                
+                existing_urls.add(row[2])
+
+
+    if url in existing_urls:
+        print(f"Skipped duplicate article: {url}")
+        return
+    
+
+    try:
+        text = extractArticle(url)
+        if text and len(text.split()) > 50:
+            with open(filename, "a", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow([text, label, url])
+            print(f"{url} SAVED AS {label}")
+    except:
+        print(f"Error trying to save {url}")
+
+
+saveArticle("https://www.nytimes.com/athletic/live-blogs/transfer-news-live-updates-thursday-august-28/qNI2Vf8dydwk/", "REAL")
