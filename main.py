@@ -47,7 +47,7 @@ def saveArticle(url, label, filename="dataset.csv"):
 
 
     if url in existing_urls:
-        print(f"Skipped duplicate article: {url}")
+        print(f"SKIPPED DUPLICATE ARTICLE: {url}")
         return
     
 
@@ -57,9 +57,9 @@ def saveArticle(url, label, filename="dataset.csv"):
             with open(filename, "a", newline="", encoding="utf-8") as f:
                 writer = csv.writer(f)
                 writer.writerow([text, label, url])
-            print(f"{url} SAVED AS {label}")
+            print(f"{label} SAVED: {url}")
     except:
-        print(f"Error trying to save {url}")
+        print(f"ERROR TRYING TO SAVE {url}")
 
 
 saveArticle("https://www.nytimes.com/athletic/live-blogs/transfer-news-live-updates-thursday-august-28/qNI2Vf8dydwk/", "REAL")
