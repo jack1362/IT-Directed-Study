@@ -1,116 +1,50 @@
-import requests
-import csv
 import os
-from bs4 import BeautifulSoup
-from urllib.parse import urljoin, urlparse
+import requests
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
+import joblib
 
-TAG_BLACKLIST = ["script", "style", "header", "footer", "nav", "aside", "noscript"]
-TAG_WHITELIST = ["p", "h1", "h2"]
+csv_file = "fake_and_real_news_dataset.csv"
 
-def extractArticle(url):
-    response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
-    if response.status_code != 200:
-        return None
-    
-    soup = BeautifulSoup(response.text, "html.parser")
-    
-    for tag in soup(TAG_BLACKLIST):
-        tag.decompose()
+data = pd.read_csv(csv_file)
+data["text"] = data["title"].fillna("") + " " + data["text"].fillna("")
+data["label"] = data["label"].str.upper().replace({"FALSE":"FAKE","TRUE":"REAL"})
+data = data.dropna(subset=["text","label"]).drop_duplicates(subset=["text"])
 
-    article = soup.find("article")
-    if article:
-        textElements = article.find_all(TAG_WHITELIST)
-    else:
-        textElements = soup.find_all(TAG_WHITELIST)
+print(f"Number of articles: {len(data)}")
+print(data["label"].value_counts())
 
-    piecesOfText = []
-    for element in textElements:
-        piece = element.get_text(strip=True)
-        if piece:
-            piecesOfText.append(piece)
-    
-    text = "\n".join(piecesOfText)
-    return text if text else None
+# Map labels to numbers
+label2num = {"FAKE":0, "REAL":1}
+num2label = {0:"FAKE",1:"REAL"}
+data["label_num"] = data["label"].map(label2num)
 
-def saveArticle(url, label, filename="dataset.csv"):
-    existing_urls = set()
-    if os.path.exists(filename):
-        with open(filename, "r", encoding="utf-8") as f:
-            reader = csv.reader(f)
-            for row in reader:
-                if len(row) < 3:
-                    continue
-                existing_urls.add(row[2])
-
-    if url in existing_urls:
-        print(f"SKIPPED DUPLICATE ARTICLE: {url}")
-        return
-    
-    try:
-        text = extractArticle(url)
-        # Only save if it looks like a real article
-        if text and len(text.split()) > 100:
-            with open(filename, "a", newline="", encoding="utf-8") as f:
-                writer = csv.writer(f)
-                writer.writerow([text, label, url])
-            print(f"{label} SAVED: {url}")
-    except Exception as e:
-        print(f"ERROR TRYING TO SAVE {url}: {e}")
-
-def getLinks(url, domain_only=True):
-    """Extract links from a given page."""
-    links = set()
-    try:
-        response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
-        if response.status_code != 200:
-            return links
-
-        soup = BeautifulSoup(response.text, "html.parser")
-        for a in soup.find_all("a", href=True):
-            href = a["href"]
-            full_url = urljoin(url, href)
-            
-            if domain_only:
-                if urlparse(full_url).netloc != urlparse(url).netloc:
-                    continue
-
-            if full_url.startswith("http"):
-                links.add(full_url)
-    except Exception as e:
-        print(f"ERROR extracting links from {url}: {e}")
-    return links
-
-def isArticleURL(url):
-    """Heuristic to decide if a URL is likely an article."""
-    # Example: NYTimes Athletic articles have /YYYY/MM/ or end with slug-like IDs
-    if any(x in url for x in ["/live-blogs/", "/202", "/article/", "/story/"]):
-        return True
-    return False
-
-def crawlAndSave(start_url, label, max_pages=50):
-    """Crawl starting from a URL and save articles."""
-    visited = set()
-    to_visit = [start_url]
-
-    while to_visit and len(visited) < max_pages:
-        url = to_visit.pop(0)
-        if url in visited:
-            continue
-        visited.add(url)
-
-        # Save only if it looks like an article
-        if isArticleURL(url):
-            saveArticle(url, label)
-
-        # Always extract new links (even from sections)
-        new_links = getLinks(url)
-        for link in new_links:
-            if link not in visited:
-                to_visit.append(link)
-
-# Example: crawl up to 50 pages, but only save real articles
-crawlAndSave(
-    "https://www.nytimes.com/athletic/live-blogs/transfer-news-live-updates-thursday-august-28/qNI2Vf8dydwk/",
-    "REAL",
-    max_pages=50
+X_train, X_test, y_train, y_test = train_test_split(
+    data["text"], data["label_num"], test_size=0.2, random_state=42, stratify=data["label_num"]
 )
+
+vectorizer = TfidfVectorizer(stop_words="english", max_features=10000)
+X_train_vec = vectorizer.fit_transform(X_train)
+X_test_vec = vectorizer.transform(X_test)
+
+model = LogisticRegression(max_iter=300)
+model.fit(X_train_vec, y_train)
+
+# Save the model and vectorizer
+joblib.dump(model, "lr_model.pkl")
+joblib.dump(vectorizer, "tfidf.pkl")
+print("Model trained and saved")
+
+def predict(text):
+    vec = vectorizer.transform([text])
+    pred = model.predict(vec)[0]
+    return num2label[pred]
+
+# Example usage
+example1 = "Breaking: NASA confirms discovery of new planet with intelligent life!"
+example2 = "The local school announced a new math curriculum for next year."
+
+print("Example 1 Prediction:", predict(example1))
+print("Example 2 Prediction:", predict(example2))
